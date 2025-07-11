@@ -13,38 +13,40 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.alibaba.csp.sentinel.dashboard.rule.nacos;
+package com.alibaba.csp.sentinel.dashboard.nacos;
 
-import java.util.List;
-
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.FlowRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.rule.DynamicRulePublisher;
-import com.alibaba.csp.sentinel.datasource.Converter;
+import com.alibaba.csp.sentinel.dashboard.enums.RuleTypeEnum;
 import com.alibaba.csp.sentinel.util.AssertUtil;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.nacos.api.config.ConfigService;
-
+import com.alibaba.nacos.api.config.ConfigType;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.util.CollectionUtils;
+
+import java.util.List;
 
 /**
  * @author Eric Zhao
  * @since 1.4.0
  */
-@Component("flowRuleNacosPublisher")
-public class FlowRuleNacosPublisher implements DynamicRulePublisher<List<FlowRuleEntity>> {
+@Component
+public class RuleNacosPublisher {
+
+    private static final String GROUP_ID = "SENTINEL_GROUP";
 
     @Autowired
     private ConfigService configService;
-    @Autowired
-    private Converter<List<FlowRuleEntity>, String> converter;
 
-    @Override
-    public void publish(String app, List<FlowRuleEntity> rules) throws Exception {
+    public <T> void publish(String app, RuleTypeEnum ruleType, List<T> rules) throws Exception {
+
         AssertUtil.notEmpty(app, "app name cannot be empty");
-        if (rules == null) {
+        if (CollectionUtils.isEmpty(rules)) {
             return;
         }
-        configService.publishConfig(app + NacosConfigUtil.FLOW_DATA_ID_POSTFIX,
-            NacosConfigUtil.GROUP_ID, converter.convert(rules));
+
+        String dataId = app + "-" + ruleType.getType();
+        String dataContent = JSON.toJSONString(rules);
+        configService.publishConfig(dataId, GROUP_ID, dataContent, ConfigType.JSON.getType());
     }
 }

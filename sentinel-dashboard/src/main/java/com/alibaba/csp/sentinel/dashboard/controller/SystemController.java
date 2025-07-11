@@ -15,26 +15,25 @@
  */
 package com.alibaba.csp.sentinel.dashboard.controller;
 
-import java.util.Date;
-import java.util.List;
-
 import com.alibaba.csp.sentinel.dashboard.auth.AuthAction;
 import com.alibaba.csp.sentinel.dashboard.auth.AuthService.PrivilegeType;
+import com.alibaba.csp.sentinel.dashboard.client.SentinelApiClient;
+import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.SystemRuleEntity;
 import com.alibaba.csp.sentinel.dashboard.discovery.AppManagement;
+import com.alibaba.csp.sentinel.dashboard.domain.Result;
+import com.alibaba.csp.sentinel.dashboard.enums.RuleTypeEnum;
+import com.alibaba.csp.sentinel.dashboard.nacos.RuleNacosPublisher;
 import com.alibaba.csp.sentinel.dashboard.repository.rule.RuleRepository;
 import com.alibaba.csp.sentinel.util.StringUtil;
-
-import com.alibaba.csp.sentinel.dashboard.datasource.entity.rule.SystemRuleEntity;
-import com.alibaba.csp.sentinel.dashboard.discovery.MachineInfo;
-import com.alibaba.csp.sentinel.dashboard.client.SentinelApiClient;
-import com.alibaba.csp.sentinel.dashboard.domain.Result;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import java.util.Date;
+import java.util.List;
 
 /**
  * @author leyou(lihao)
@@ -51,6 +50,9 @@ public class SystemController {
     private SentinelApiClient sentinelApiClient;
     @Autowired
     private AppManagement appManagement;
+
+    @Autowired
+    private RuleNacosPublisher ruleNacosPublisher;
 
     private <R> Result<R> checkBasicParams(String app, String ip, Integer port) {
         if (StringUtil.isEmpty(app)) {
@@ -155,12 +157,10 @@ public class SystemController {
         entity.setGmtModified(date);
         try {
             entity = repository.save(entity);
+            publishRules(entity.getApp());
         } catch (Throwable throwable) {
             logger.error("Add SystemRule error", throwable);
             return Result.ofThrowable(-1, throwable);
-        }
-        if (!publishRules(app, ip, port)) {
-            logger.warn("Publish system rules fail after rule add");
         }
         return Result.ofSuccess(entity);
     }
@@ -217,12 +217,10 @@ public class SystemController {
         entity.setGmtModified(date);
         try {
             entity = repository.save(entity);
+            publishRules(entity.getApp());
         } catch (Throwable throwable) {
             logger.error("save error:", throwable);
             return Result.ofThrowable(-1, throwable);
-        }
-        if (!publishRules(entity.getApp(), entity.getIp(), entity.getPort())) {
-            logger.info("publish system rules fail after rule update");
         }
         return Result.ofSuccess(entity);
     }
@@ -239,18 +237,16 @@ public class SystemController {
         }
         try {
             repository.delete(id);
+            publishRules(oldEntity.getApp());
         } catch (Throwable throwable) {
             logger.error("delete error:", throwable);
             return Result.ofThrowable(-1, throwable);
         }
-        if (!publishRules(oldEntity.getApp(), oldEntity.getIp(), oldEntity.getPort())) {
-            logger.info("publish system rules fail after rule delete");
-        }
         return Result.ofSuccess(id);
     }
 
-    private boolean publishRules(String app, String ip, Integer port) {
-        List<SystemRuleEntity> rules = repository.findAllByMachine(MachineInfo.of(app, ip, port));
-        return sentinelApiClient.setSystemRuleOfMachine(app, ip, port, rules);
+    private void publishRules(String app) throws Exception {
+        List<SystemRuleEntity> rules = repository.findAllByApp(app);
+        ruleNacosPublisher.publish(app, RuleTypeEnum.SYSTEM, rules);
     }
 }
